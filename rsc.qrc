@@ -1,0 +1,9 @@
+<RCC>
+    <qresource prefix="/imgs">
+        <file alias="icon">icon.png</file>
+        <file alias="add">add.png</file>
+        <file alias="stay_top">stay_top.png</file>
+        <file alias="folder">folder.png</file>
+        <file alias="bkg">bkg.png</file>
+    </qresource>
+</RCC>

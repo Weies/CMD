@@ -1,131 +1,158 @@
 #include "MainWindow.h"
+#include "QMenuBar"
+#include "QMessageBox"
+#include "commom.h"
 #include "ui_MainWindow.h"
-
+#include "ui_commandwidget.h"
+#include <QBrush>
+#include <QCollator>
+#include <QDir>
+#include <QEventPoint>
+#include <QFile>
+#include <QIODeviceBase>
+#include <QListView>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QRegExp>
+#include <QStandardItem>
 #include <QTextCodec>
+#include <QTextEdit>
 #include <QTextStream>
 #include <iostream>
 #include <windows.h>
-#include <QListView>
-#include <QFile>
-#include <QDir>
+
 #include <QIODeviceBase>
-#include <QRegExp>
-#include <QCollator>
-#include <QTextEdit>
-#include <QMouseEvent>
-#include <QEventPoint>
-#include <QStandardItem>
-#include <QBrush>
-#include <QPainter>
-#include "ui_commandwidget.h"
-#include "commom.h"
+#define Read QIODeviceBase::OpenModeFlag::ReadOnly
+#define Write QIODeviceBase::OpenModeFlag::WriteOnly
 
+QString dir(const QString& file)
+{
+    return QCoreApplication::applicationDirPath() + '/' + file;
+}
 
-const QString MainWindow::SCMD_DIR = "c:/scmd";
-const QString MainWindow::SETUP_FILE = "c:/scmd/setup.txt";
-const QString MainWindow::SETUP_FILE_COPY = "c:/scmd/setup_copy.txt";
-const char* SETUP_HEAD ="# SCMD setup file.\n\n";
-
-#pragma execution_character_set("UTF-8")
-
+const char* SETUP_HEAD = "# QCMD setup file.\n\n";
 
 bool MainWindow::check_level1(const QModelIndex& index)
 {
     return index.isValid() && !index.parent().isValid();
 }
 
-QString cutTabTitle(const QString& title,int head,int tail)
+QString cutTabTitle(const QString& title, int head, int tail)
 {
-    if(title.size()<head+tail+3)
+    if (title.size() < head + tail + 3)
         return title;
-    return title.sliced(0,head)+"..."+title.sliced(title.size()-tail);
+    return title.sliced(0, head) + "..." + title.sliced(title.size() - tail);
+}
+
+void write_field(const QString& name, const QString& value, QFile& f)
+{
+    QString head = name + "=[" + value + "]\n\n";
+    f.write(head.toUtf8());
+}
+
+QString dumpStringList(const QStringList& s, char delima = ',')
+{
+    QString r;
+    for (auto& str : s) {
+        r += str + delima;
+    }
+    if (r.size())
+        r.resize(r.size() - 1);
+    return r;
+}
+
+QString dumpCommandMap(CommandMap s, const QStringList& cs, char delima = ',')
+{
+    QString r = "\n";
+    for (auto& str : cs) {
+        r += str + "^" + QString::number(s[str]) + '\n';
+    }
+    r += '\n';
+
+    if (r.size())
+        r.resize(r.size() - 1);
+    return r;
 }
 
 void MainWindow::loadConfigFile()
 {
     QDir d;
-    if(d.exists(SCMD_DIR))
-    {
+    if (d.exists(CONFIG_DIR)) {
         QFile f(SETUP_FILE);
-        if(!f.exists(SETUP_FILE))
-        {
-            f.setFileName(SETUP_FILE_COPY);
-            if(!f.exists(SETUP_FILE_COPY))
-            {
-                QTextEdit* edit = ui->cmd_wdiget->getTextEdit();
-                edit->moveCursor(QTextCursor::Start);
-                edit->append("Found no configuration file, skipped initialization.\n");
-                return;
-            }
-        }
         f.open(Read);
-        QString str = f.readAll();
-        str.replace("\r","");
-        QStringList list = str.split('\n');
-        for(auto& line: list)
-        {
-            if(line.startsWith("#"))
-                continue;
-            if(line.startsWith("recent_commands"))
-            {
-                QString command_lines = line.sliced(line.indexOf('[')+1,line.lastIndexOf(']')-line.indexOf('[')-1);
-                QStringList command_lines_list =command_lines.split(',');
-                for(QString& command: command_lines_list)
-                {
-                    addInstructions(command);
+        if (!f.isOpen()) {
+            QTextEdit* edit = ui->cmd_widget->getTextEdit();
+            edit->moveCursor(QTextCursor::Start);
+            edit->append("Found no configuration file, skipped initialization.\n");
+            return;
+        }
+
+        QString text = f.readAll();
+
+        auto _get_content = [](const QString& s) -> QString { return s.sliced(s.indexOf('[') + 1, s.indexOf(']') - s.indexOf('[') - 1); };
+
+        while (!text.isEmpty()) {
+            auto lineEnd = text.indexOf('\n');
+            QString line = text.sliced(0, lineEnd);
+            if (check_valid(line) && !line.startsWith("#")) {
+                QString content = _get_content(text);
+                lineEnd = text.indexOf(']');
+
+                if (line.startsWith("recent_commands")) {
+                    QStringList command_lines_list = content.split('\n');
+                    for (QString& command : command_lines_list) {
+                        if (!check_valid(command))
+                            continue;
+
+                        QStringList p = command.split('^');
+                        commands.append(p[0].trimmed());
+                        if (p.size() > 1)
+                            commandMap[p[0].trimmed()] = p[1].trimmed().toInt();
+                    }
+                } else if (line.startsWith("expanded_headers")) {
+                    expandedHeaders = content.split(',');
+                } else if (line.startsWith("geometry")) {
+                    int a[4] = { 0, 0, 600, 400 };
+                    sscanf(content.toLocal8Bit(), "%d %d %d %d", a, a + 1, a + 2, a + 3);
+                    setGeometry(QRect(a[0], a[1], a[2], a[3]));
+                } else if (line.startsWith("window_title")) {
+                    auto str = ui->title_label->toHtml();
+                    ui->title_label->setHtml(str.replace("qCMD", content));
+                } else {
+                    lineEnd = line.size();
                 }
             }
-            else if(line.startsWith("expanded_headers"))
-            {
-                QString headers = line.sliced(line.indexOf('[')+1,line.lastIndexOf(']')-line.indexOf('[')-1);
-                expandedHeaders = headers.split(',');
-            }
-            else if(line.startsWith("geometry"))
-            {
-                QString geo = line.sliced(line.indexOf('[')+1,line.lastIndexOf(']')-line.indexOf('[')-1);
-                int a[4];
-                sscanf(geo.toLocal8Bit(),"%d %d %d %d",a , a+1, a+2, a+3);
-                setGeometry(QRect(a[0] , a[1], a[2], a[3]));
-            }
+            text = text.sliced(lineEnd + 1).trimmed();
         }
         f.close();
+    } else {
+        d.mkdir(CONFIG_DIR);
     }
+
+    updateView();
 }
 
 void MainWindow::dumpConfigFile()
 {
     QDir d;
-    if(!d.exists(SCMD_DIR))
-        d.mkdir(SCMD_DIR);
+    if (!d.exists(CONFIG_DIR))
+        d.mkdir(CONFIG_DIR);
+    if (!d.exists(CONFIG_DIR + "/backup"))
+        d.mkdir(CONFIG_DIR + "/backup");
 
     QFile f(SETUP_FILE);
     f.open(Write);
     f.write(SETUP_HEAD);
 
-    f.write("recent_commands=[");
-    for(const QString& inst:commands)
-    {
-        if(!check_valid(inst))
-            continue;
-        f.write(inst.toLocal8Bit()+',');
-    }
-    f.write("]\n\n");
+    const auto& r = this->normalGeometry();
+    write_field("geometry", fmt("{} {} {} {}", r.x(), r.y(), r.width(), r.height()), f);
+
+    write_field("window_title", ui->title_label->toPlainText(), f);
+
+    write_field("recent_commands", dumpCommandMap(commandMap, commands, ','), f);
 
     readExpandedHeaders();
-    f.write("expanded_headers=[");
-    for(const QString& inst:expandedHeaders)
-    {
-        if(!check_valid(inst))
-            continue;
-        f.write(inst.toLocal8Bit()+',');
-    }
-    f.write("]\n\n");
-
-    f.write("geometry=[");
-    const auto& r = this->geometry();
-    QString geo = fmt("{} {} {} {}",r.x(),r.y(),r.width(),r.height());
-    f.write(geo.toLocal8Bit());
-    f.write("]\n\n");
+    write_field("expanded_headers", dumpStringList(expandedHeaders, ','), f);
 
     f.close();
 
@@ -133,87 +160,109 @@ void MainWindow::dumpConfigFile()
     f.open(Read);
     QString config = f.readAll();
     f.close();
-    f.setFileName(SCMD_DIR+"/setup_copy_"+QDateTime::currentDateTime().toString("hh.mm.ss dd.MM.yyyy")+".txt");
+    f.setFileName(CONFIG_DIR + "/backup/setup_copy_" + QDateTime::currentDateTime().toString("hh.mm.ss dd.MM.yyyy") + ".txt");
     f.open(Write);
-    f.write(config.toLocal8Bit());
+    f.write(config.toUtf8());
     f.close();
 }
 
-void MainWindow::setupNewTab(QToolButton* btn,CommandWidget* cmd)
+void MainWindow::setupNewTab(QToolButton* btn, CommandWidget* cmd)
 {
     btn->setText("cmd");
     btn->setToolTip("cmd");
+    btn->setMinimumSize({ 60, 20 });
+    btn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+
     tabs.push_back(btn);
     widgets.push_back(cmd);
-    btn->setMinimumSize({60,20});
-    btn->setSizePolicy(QSizePolicy::Fixed,QSizePolicy::Expanding);
-    if(cmd!=ui->cmd_wdiget)
-        ui->horizontalLayout->insertWidget(tabs.size()-1,btn);
-    btn->setToolTip("cmd");
-    connect(btn,&QToolButton::clicked,[this,btn](){selectTab(this->tabs.indexOf(btn));});
+
+    if (cmd != ui->cmd_widget) {
+        ui->tab_layout->insertWidget(tabs.size() - 1, btn);
+    }
+    connect(btn, &QToolButton::clicked, [this, btn]() { selectTab(this->tabs.indexOf(btn)); });
 }
 
 void MainWindow::selectTab(int bar_index)
 {
-    static int last_select = -1;
-    if(bar_index==last_select||bar_index>widgets.size())
+    if (bar_index == last_select_tab || bar_index > widgets.size())
         return;
 
-    if(last_select!=-1)
-    {
-        widgets[last_select]->hide();
-        tabs[last_select]->setProperty("class","rest_tab");
-        tabs[last_select]->style()->polish(tabs[last_select]);
-        Update_Style(tabs[last_select]);
-    }
     curTab = tabs[bar_index];
-    curTab->setProperty("class","active_tab");
+    curTab->setProperty("class", "active_tab");
     Update_Style(curTab);
+
     curWidget = widgets[bar_index];
-    curWidget->setParent(ui->cmd_window);
+
+    if (last_select_tab != -1) {
+        ui->horizontalLayout_3->removeWidget(widgets[last_select_tab]);
+        widgets[last_select_tab]->hide();
+        tabs[last_select_tab]->setProperty("class", "rest_tab");
+        Update_Style(tabs[last_select_tab]);
+
+        ui->horizontalLayout_3->insertWidget(0, curWidget);
+        ui->horizontalLayout_3->setStretch(0, 7);
+        ui->horizontalLayout_3->setStretch(1, 3);
+    }
+
     curWidget->show();
 
-    last_select=bar_index;
+    last_select_tab = bar_index;
     onResize(this->size());
 }
-
 
 void MainWindow::onAddTab()
 {
     QToolButton* btn = new QToolButton(this);
     CommandWidget* cmd = new CommandWidget(this);
-    setupNewTab(btn,cmd);
-    selectTab(tabs.size()-1);
+    setupNewTab(btn, cmd);
+    selectTab(tabs.size() - 1);
 }
 
-MainWindow::MainWindow(QWidget *parent)
+void loadStyle(const QString& file, MainWindow* win)
+{
+    QFile f(file);
+
+    if (f.exists()) {
+        f.open(Read);
+        QString style = f.readAll();
+        win->setStyleSheet(style);
+    } else {
+        (new QMessageBox(QMessageBox::Icon::Warning, "Failed load stylesheet", "Failed load stylesheet,file: " + file + " not exist.\n"))->show();
+    }
+}
+
+MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
+
+    CONFIG_DIR = dir("config");
+    SETUP_FILE = dir("config/setup.txt");
+    STYLE_FILE = dir("config/style.css");
+
     model = new QStandardItemModel();
 
-    connect(ui->add_bar,&QPushButton::clicked,this,&MainWindow::onAddTab);
+    connect(ui->add_bar, &QPushButton::clicked, this, &MainWindow::onAddTab);
 
-    setupNewTab(ui->cmd_bar,ui->cmd_wdiget);
+    setupNewTab(ui->cmd_bar, ui->cmd_widget);
     selectTab(0);
 
-    connect(ui->lineEdit, &QLineEdit::returnPressed,this,&MainWindow::onEditDone);
+    connect(ui->lineEdit, &QLineEdit::returnPressed, this, &MainWindow::onEditDone);
 
-    connect(ui->clear_button,&QPushButton::clicked,this,&MainWindow::onClear);
-    connect(ui->excute_button,&QPushButton::clicked,this,&MainWindow::onExcuteButton);
-    connect(ui->restart_button,&QPushButton::clicked,this,&MainWindow::onRestart);
+    connect(ui->clear_button, &QPushButton::clicked, this, &MainWindow::onClear);
+    connect(ui->excute_button, &QPushButton::clicked, this, &MainWindow::onExcuteButton);
+    connect(ui->restart_button, &QPushButton::clicked, this, &MainWindow::onRestart);
+    //    connect(ui->terminate_button,&QPushButton::clicked,this,&MainWindow::onTerminate);
 
-    connect(ui->delete_button,&QPushButton::clicked,this,&MainWindow::onDelete);
-    connect(ui->move_up_button,&QPushButton::clicked,this,&MainWindow::onMoveUp);
-    connect(ui->move_down_button,&QPushButton::clicked,this,&MainWindow::onMoveDown);
-    connect(ui->sort_button,&QPushButton::clicked,this,&MainWindow::onSort);
+    connect(ui->delete_button, &QPushButton::clicked, this, &MainWindow::onDelete);
+    connect(ui->move_up_button, &QPushButton::clicked, this, &MainWindow::onMoveUp);
+    connect(ui->move_down_button, &QPushButton::clicked, this, &MainWindow::onMoveDown);
+    connect(ui->sort_button, &QPushButton::clicked, this, &MainWindow::onSort);
 
-    connect(ui->treeView,&QListView::doubleClicked,this,&MainWindow::onDoubleClick);
-    connect(ui->treeView,&QListView::clicked,this,&MainWindow::onClick);
+    connect(ui->treeView, &QListView::doubleClicked, this, &MainWindow::onDoubleClick);
+    connect(ui->treeView, &QListView::clicked, this, &MainWindow::onClick);
     // connect(ui->treeView,&QTreeView::expanded,[this](){readExpandedHeaders();});
-
-    loadConfigFile();
 
     ui->treeView->setModel(model);
     ui->treeView->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -224,60 +273,47 @@ MainWindow::MainWindow(QWidget *parent)
 
     ui->min_btn->setIcon(style()->standardPixmap(QStyle::SP_TitleBarMinButton));
     ui->max_btn->setIcon(style()->standardPixmap(QStyle::SP_TitleBarMaxButton));
-    ui->close_btn ->setIcon(style()->standardPixmap(QStyle::SP_TitleBarCloseButton));
-    ui->stay_top_btn ->setIcon(QIcon(":/imgs/stay_top"));
+    ui->close_btn->setIcon(style()->standardPixmap(QStyle::SP_TitleBarCloseButton));
+    ui->stay_top_btn->setIcon(QIcon(":/imgs/stay_top"));
 
-    connect(ui->close_btn,&QToolButton::clicked,this,&QMainWindow::close);
-    connect(ui->min_btn,&QToolButton::clicked,this,&QMainWindow::showMinimized);
-    connect(ui->max_btn,&QToolButton::clicked,[this](){
-        if(this->isMaximized())
+    connect(ui->close_btn, &QToolButton::clicked, this, &QMainWindow::close);
+    connect(ui->min_btn, &QToolButton::clicked, this, &QMainWindow::showMinimized);
+    connect(ui->max_btn, &QToolButton::clicked, [this]() {
+        if (this->isMaximized())
             this->showNormal();
-        else this->showMaximized();
+        else
+            this->showMaximized();
     });
-    connect(ui->stay_top_btn,&QToolButton::clicked,[this](){
+    connect(ui->stay_top_btn, &QToolButton::clicked, [this]() {
         static bool stay_top = false;
         if (!stay_top)
             // a bad experience that when switched stay on top, the window will disapear.
             this->setWindowFlags(this->windowFlags() | Qt::WindowStaysOnTopHint);
-        else this->setWindowFlags(this->windowFlags() ^ Qt::WindowStaysOnTopHint);
+        else
+            this->setWindowFlags(this->windowFlags() ^ Qt::WindowStaysOnTopHint);
         stay_top = !stay_top;
         this->show();
     });
     this->setWindowIcon(QIcon(":/imgs/icon"));
-    expandHeaders();
 
+    loadConfigFile();
+    loadStyle(STYLE_FILE, this);
+    expandHeaders();
 }
 void MainWindow::onResize(const QSize& size)
 {
-    auto& s = size;
-    float cmd_window_w = s.width()*840.0/1134;
-
-    ui->cmd_window->resize(cmd_window_w,s.height()-228);
-    curWidget->resize(cmd_window_w,s.height()-228);
-    curWidget->getTextEdit()->resize(cmd_window_w,s.height()-228);
-
-    ui->treeView->resize(s.width()-ui->cmd_window->width()-32,s.height()-267);
-    ui->treeView->move(ui->cmd_window->pos()+QPoint{10+ui->cmd_window->width(),0});
-    ui->lineEdit->move({10,s.height()-118});
-    ui->lineEdit->resize(s.width()-22,ui->lineEdit->height());
-    ui->btn_frame->move({s.width()-474,s.height()-72});
-    ui->top_widget->resize(s.width(),ui->top_widget->height());
-    ui->frame_2->resize(s.width()*261/1134,ui->frame_2->height());
-    ui->frame_2->move(cmd_window_w + 20,s.height()-(778-620));
-    ui->tab_widget->resize(s.width()-22 ,ui->tab_widget->height());
-    ui->horizontalLayout_2->setStretchFactor(ui->move_down_button,1);
-    ui->horizontalSpacer_2->setGeometry(QRect(0,0,600,10));
+}
+void MainWindow::setTitle(const QString& title)
+{
+    ui->title_label->setText(title);
 }
 
-void MainWindow::paintEvent(QPaintEvent *event)
+void MainWindow::paintEvent(QPaintEvent* event)
 {
     QMainWindow::paintEvent(event);
-
-//    QPainter painter(this);
-//    painter.drawPixmap(rect(),QPixmap(":/imgs/bkg"),QRect());
 }
 
-void MainWindow::resizeEvent(QResizeEvent *e)
+void MainWindow::resizeEvent(QResizeEvent* e)
 {
     onResize(e->size());
 }
@@ -287,24 +323,51 @@ void MainWindow::updateView()
     readExpandedHeaders();
     model->clear();
     headers.clear();
-    auto copy = commands;
+    auto copyCommands = commands;
+    auto copyCommandMap = commandMap;
     commands.clear();
-    for(auto& command : copy)
-    {
-        addInstructions(command);
+    commandMap.clear();
+
+    headers.append("*HOT*");
+    QStandardItem* item = new QStandardItem(headers[0]);
+
+    QBrush b;
+    b.setColor(QColor(255, 0, 255));
+    item->setBackground(b);
+    item->setIcon(QIcon(":/imgs/favo.png"));
+
+    std::map<int, QStringList> topInstMap;
+    for (auto& [str, count] : copyCommandMap)
+        topInstMap[count].append(str);
+
+    const int tops = 18;
+    QStringList topInstructions;
+    for (auto it = topInstMap.rbegin(); it != topInstMap.rend(); ++it) {
+        if (topInstructions.size() > tops || it->first == 0)
+            break;
+        topInstructions.append(it->second);
+    }
+    topInstructions.resize(std::min(tops, (int)topInstructions.size()));
+    std::sort(topInstructions.begin(), topInstructions.end());
+    for (auto& inst : topInstructions)
+        item->appendRow(new QStandardItem(inst));
+
+    model->appendRow(item);
+
+    for (auto& command : copyCommands) {
+        addInstructions(command, copyCommandMap[command]);
     }
     expandHeaders();
 }
 
 void MainWindow::mouseMoveEvent(QMouseEvent* e)
 {
-    if(ui->top_widget->underMouse()&&e->type()==QMouseEvent::MouseMove)
-    {
-        this->move(e->point(0).globalPosition().toPoint()-press_p);
+    if (ui->top_widget->underMouse() && e->type() == QMouseEvent::MouseMove) {
+        this->move(e->point(0).globalPosition().toPoint() - press_p);
     }
 }
 
-void MainWindow:: mousePressEvent(QMouseEvent* e)
+void MainWindow::mousePressEvent(QMouseEvent* e)
 {
     press_p = e->point(0).pressPosition().toPoint();
 }
@@ -316,37 +379,34 @@ MainWindow::~MainWindow()
     delete model;
 }
 
-void MainWindow::addInstructions(const QString& _instruction)
+void MainWindow::addInstructions(const QString& _instruction, int count)
 {
-    if(!check_valid(_instruction)||commands.indexOf(_instruction)!=-1)
-    {
+    QString instruction = _instruction.trimmed();
+    if (!check_valid(instruction) || commandMap.count(instruction)) {
         return;
     }
-    QString instruction = _instruction.trimmed();
-    if(!instruction.startsWith("bat ") && instruction.endsWith(".bat"))
-    {
-        instruction = "bat "+ instruction;
+
+    if (!instruction.startsWith("bat ") && instruction.endsWith(".bat")) {
+        instruction = "bat " + instruction;
     }
     QString head = instruction.split(' ')[0];
-    if(!headers.count(head))
-    {
+    if (headers.indexOf(head) == -1) {
         headers.append(head);
         QStandardItem* item = new QStandardItem(head);
         QBrush b;
-        b.setColor(QColor(255,0,255));
+        b.setColor(QColor(255, 0, 255));
         item->setBackground(b);
         item->setIcon(QIcon(":/imgs/folder"));
 
         item->appendRow(new QStandardItem(instruction));
-        model->appendRow({item});
-    }
-    else
-    {
+        model->appendRow(item);
+    } else {
         int idx = headers.indexOf(head);
-        auto* ptr= model->item(idx,0);
+        auto* ptr = model->item(idx, 0);
         ptr->appendRow(new QStandardItem(instruction));
     }
-    commands.append(instruction);
+    commandMap[instruction] = count;
+    commands.push_back(instruction);
 }
 
 void MainWindow::onExcuteButton()
@@ -359,93 +419,90 @@ void MainWindow::onExcuteButton()
 void MainWindow::readExpandedHeaders()
 {
     expandedHeaders.clear();
-    for(auto id= ui->treeView->indexAt({0,0});id.isValid();id = ui->treeView->indexBelow(id))
-    {
-        if(ui->treeView->isExpanded(id))
-        {
+    for (auto id = ui->treeView->indexAt({ 0, 0 }); id.isValid(); id = ui->treeView->indexBelow(id)) {
+        if (ui->treeView->isExpanded(id)) {
             expandedHeaders << model->itemFromIndex(id)->text();
         }
     }
 }
 void MainWindow::expandHeaders()
 {
-    for(auto id= ui->treeView->indexAt({0,0});id.isValid();id = ui->treeView->indexBelow(id))
-    {
+    for (auto id = ui->treeView->indexAt({ 0, 0 }); id.isValid(); id = ui->treeView->indexBelow(id)) {
         const auto& header = model->itemFromIndex(id)->text();
-        if(expandedHeaders.indexOf(header)!=-1)
-        {
-                ui->treeView->setExpanded(id,true);
+        if (expandedHeaders.indexOf(header) != -1) {
+            ui->treeView->setExpanded(id, true);
         }
     }
 }
 
-void  MainWindow::onRestart()
+void MainWindow::onRestart()
 {
     QProcess*& proc = curWidget->getProcess();
     curWidget->getTextEdit()->clear();
-    if(proc&& proc->state()!=proc->NotRunning)
-    {
-        proc->terminate();
-    }
+
     delete proc;
+
     proc = new QProcess;
     proc->start("cmd");
 
     curTab->setText("cmd");
     curTab->setToolTip("cmd");
-    connect(proc,&QProcess::readyReadStandardOutput,curWidget,&CommandWidget::readyReadStandardOutputSlot);
-    connect(proc,&QProcess::readyReadStandardError,curWidget,&CommandWidget::readyReadStandardErrorSlot);
+    connect(proc, &QProcess::readyReadStandardOutput, curWidget, &CommandWidget::readyReadStandardOutputSlot);
+    connect(proc, &QProcess::readyReadStandardError, curWidget, &CommandWidget::readyReadStandardErrorSlot);
 }
 
-void  MainWindow::onClear()
+void MainWindow::onTerminate()
+{
+    curWidget->getProcess()->write("\0x03\n", 3);
+}
+
+void MainWindow::onClear()
 {
     curWidget->getTextEdit()->clear();
 }
 
-void  MainWindow::onDelete()
+void MainWindow::onDelete()
 {
     auto index = ui->treeView->currentIndex();
     const QString& text = model->itemFromIndex(index)->text();
-    if(!index.isValid())
+    if (!index.isValid())
         return;
-    if(check_level1(index))
-    {
+
+    if (check_level1(index)) {
         auto copy = commands;
-        for(auto& command : commands)
-        {
-            if(command.startsWith(text))
-            {
+        for (auto& command : copy) {
+            if (command.startsWith(text)) {
                 copy.remove(copy.indexOf(command));
+                commandMap.erase(commandMap.find(command));
             }
         }
         commands = copy;
-    }
-    else
-    {
-        commands.removeAt(commands.indexOf(text));
+    } else {
+        commands.remove(commands.indexOf(text));
+        commandMap.erase(commandMap.find(text));
     }
     updateView();
     dumpConfigFile();
 }
 
-void  MainWindow::onSort()
+void MainWindow::onSort()
 {
     QCollator co;
-    std::sort(commands.begin(),commands.end(),co);
+    std::sort(commands.begin(), commands.end(), co);
     updateView();
     dumpConfigFile();
 }
 
-void  MainWindow::onMoveDown()
+void MainWindow::onMoveDown()
 {
     QModelIndex index = ui->treeView->currentIndex();
-    if(!index.isValid()||check_level1(index)) return;
+    if (!index.isValid() || check_level1(index))
+        return;
 
     QString text = model->itemFromIndex(index)->text();
     int the_index = commands.indexOf(text);
-    if(index.isValid()&&the_index<commands.size()-1)
-    {
-        commands.swapItemsAt(the_index,the_index+1);
+    if (index.isValid() && the_index < commands.size() - 1) {
+        commands.swapItemsAt(the_index, the_index + 1);
 
         dumpConfigFile();
         updateView();
@@ -453,54 +510,53 @@ void  MainWindow::onMoveDown()
     }
 }
 
-void  MainWindow::onMoveUp()
+void MainWindow::onMoveUp()
 {
     auto index = ui->treeView->currentIndex();
-    if(!index.isValid()|| check_level1(index)) return;
+    if (!index.isValid() || check_level1(index))
+        return;
 
     const QString& text = model->itemFromIndex(index)->text();
     int the_index = commands.indexOf(text);
-    if(index.isValid()&&the_index>0)
-    {
-        commands.swapItemsAt(the_index,the_index-1);
+    if (index.isValid() && the_index > 0) {
+        commands.swapItemsAt(the_index, the_index - 1);
         updateView();
         dumpConfigFile();
         ui->treeView->setCurrentIndex(ui->treeView->indexAbove(index));
     }
 }
 
-void MainWindow::exec(const QString& cmd)
+void MainWindow::exec(const QString& _cmd)
 {
-    if(!check_valid(cmd))return;
-    justExcuted=cmd;
+    QString cmd = _cmd.trimmed();
+    if (!check_valid(cmd))
+        return;
 
-    curTab->setText(cutTabTitle(cmd,12,10));
+    curTab->setText(cutTabTitle(cmd, 12, 10));
     curTab->setToolTip(cmd);
-    if(!commands.count(cmd))
-    {
-        readExpandedHeaders();
-        addInstructions(cmd);
-        expandHeaders();
-        dumpConfigFile();
+    if (!commandMap.count(cmd)) {
+        commands.push_back(cmd);
+        commandMap[cmd] = 1;
         updateView();
+        dumpConfigFile();
+    } else {
+        commandMap[cmd] += 1;
     }
-    if(cmd=="cls")
-    {
+
+    if (cmd == "cls") {
         getCurrentEdit()->clear();
         curWidget->exec(cmd);
-    }
-    else if (cmd.startsWith("bat "))
-    {
+    } else if (cmd.startsWith("bat ")) {
         curWidget->exec(cmd.sliced(4));
-    }
-    else curWidget->exec(cmd);
+    } else
+        curWidget->exec(cmd);
 }
-
 
 void MainWindow::onEditDone()
 {
     const QString& str = ui->lineEdit->text().trimmed();
-    if(str=="")return;
+    if (str == "")
+        return;
     ui->lineEdit->setText("");
 
     exec(str);
@@ -508,16 +564,14 @@ void MainWindow::onEditDone()
 
 void MainWindow::onDoubleClick(const QModelIndex& index)
 {
-    if(!check_level1(index))
-    {
+    if (!check_level1(index)) {
         exec(model->itemFromIndex(index)->text());
     }
 }
 
 void MainWindow::onClick(const QModelIndex& index)
 {
-    if(!check_level1(index))
-    {
+    if (!check_level1(index)) {
         ui->lineEdit->setText(model->itemFromIndex(index)->text());
     }
 }

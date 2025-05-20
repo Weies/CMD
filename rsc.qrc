@@ -5,5 +5,7 @@
         <file alias="stay_top">stay_top.png</file>
         <file alias="folder">folder.png</file>
         <file alias="bkg">bkg.png</file>
+        <file alias="ico">icon.ico</file>
+        <file>favo.png</file>
     </qresource>
 </RCC>

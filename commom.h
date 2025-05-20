@@ -7,7 +7,7 @@
 #include <QTextEdit>
 #include <QTextStream>
 
-#define debug qDebug()
+#define de qDebug()
 
 inline QString ConvertTextToHtml(QString t)
 {
@@ -18,14 +18,13 @@ inline QString ConvertTextToHtml(QString t)
 
 #define PLAIN_TEXT(text) QString("<text style=\" color:#ffffff;\">"+ConvertTextToHtml(text)+"</text>")
 #define RED_TEXT(text) QString("<text style=\" color:#ff4525;\">"+ConvertTextToHtml(text)+"</text>") //
-#define GREEN_TEXT(text) QString("<text style=\" color:#25f105;\">"+ConvertTextToHtml(text)+"</text>")
+#define GREEN_TEXT(text) QString("<text style=\" color:#44ff55;\">"+ConvertTextToHtml(text)+"</text>")
+#define PURPLE_TEXT(text) QString("<text style=\" color:#ea76ff;\">"+ConvertTextToHtml(text)+"</text>")
 #define BLUE_TEXT(text) QString("<text style=\" color:#0525f2;\">"+ConvertTextToHtml(text)+"</text>")
 #define WHITE_TEXT(text) QString("<text style=\" color:#f2f2f2;\">"+ConvertTextToHtml(text)+"</text>")
 #define SKYBLUE_TEXT(text) QString("<text style=\" color:rgb(44,235,255);\">"+ConvertTextToHtml(text)+"</text>")
 #define YELLOW_TEXT(text) QString("<text style=\" color:rgb(241,214,110);\">"+ConvertTextToHtml(text)+"</text>")
 
-#define Read QIODeviceBase::OpenModeFlag::ReadOnly
-#define Write QIODeviceBase::OpenModeFlag::WriteOnly
 
 #define Update_Style(widget_ptr) (widget_ptr)->style()->polish(widget_ptr);
 

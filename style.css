@@ -1,0 +1,92 @@
+* {
+    color: white;
+}
+
+QMainWindow {
+    border-image: url(:/imgs/bkg);
+    background-image: url(:/imgs/bkg);
+    border: 1px solid #ffffff;
+    selection-background-color: rgb(0, 255, 2);
+    selection-color: red;
+}
+
+QMenu {
+    color: black !important;
+}
+
+#centralwidget {
+    background-color: rgba(0, 0, 0, 0);
+}
+
+QToolButton::hover {
+    color: rgba(255, 200, 0, 255);
+    background-color: rgba(125, 155, 255, 150);
+}
+
+QPushButton {
+    border: 1px solid #eeeeee;
+    background-color: rgba(20, 20, 45, 50);
+    color: rgba(255, 200, 0, 255);
+}
+
+QPushButton::hover {
+    color: rgba(255, 200, 0, 255);
+    background-color: rgba(125, 155, 255, 150);
+}
+
+QToolButton {
+    border: transparent;
+    background-color: transparent;
+}
+
+.active_tab {
+    background-color: rgba(45, 188, 255, 155);
+    border-top: 1px solid #00ff00;
+    color: yellow;
+}
+
+.rest_tab {
+    background-color: rgba(0, 0, 0, 0);
+    border-top: 1px solid #00ff00;
+    color: white;
+}
+
+QTreeView {
+    background-color: rgba(20, 20, 45, 131);
+    color: white;
+}
+
+QTreeView::item:has-children {
+    color: #eeee00;
+    background-color: rgba(20, 20, 45, 131);
+    border-top: 1px solid #999999;
+}
+
+QTreeView::item:hover {
+    outline: 0px;
+    color: #ffa000;
+    background: rgba(0, 55, 0, 255);
+}
+
+QTreeView::item:selected {
+    color: #ffff00;
+    background: rgba(56, 145, 255, 175);
+}
+
+CommandWidget {
+    background-color: rgba(20, 20, 45, 100);
+}
+
+QTextEdit {
+    color: #ffffff;
+    border: 1px solid white;
+    background-color: rgba(20, 20, 45, 151);
+}
+
+QLineEdit {
+    background-color: rgba(40, 40, 65, 151);
+}
+
+#close_btn:hover {
+    background-color: red;
+}

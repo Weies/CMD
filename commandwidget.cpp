@@ -1,72 +1,77 @@
 #include "commandwidget.h"
-#include "ui_commandwidget.h"
 
+#include <windows.h>
+
+#include <QCollator>
+#include <QDir>
+#include <QFile>
+#include <QHBoxLayout>
+#include <QIODeviceBase>
+#include <QListView>
+#include <QRegExp>
 #include <QTextCodec>
+#include <QTextDocument>
 #include <QTextStream>
 #include <iostream>
-#include <windows.h>
-#include <QListView>
-#include <QFile>
-#include <QDir>
-#include <QIODeviceBase>
-#include <QRegExp>
-#include <QCollator>
-#include <QTextDocument>
-#include "commom.h"
 
+#include "commom.h"
+#include "ui_commandwidget.h"
 
 void CommandWidget::pushText(const QString& text)
 {
-    if(text=="")return;
+    if (text == "")
+        return;
     ui->textEdit->moveCursor(QTextCursor::End);
     ui->textEdit->insertPlainText(text);
 }
 
 void CommandWidget::pushRichText(const QString& text)
 {
-    if(text=="")return;
+    if (text == "")
+        return;
 
     ui->textEdit->moveCursor(QTextCursor::End);
     ui->textEdit->insertHtml(text + "<text style=\" color:#ffffff;\">&nbsp;</text>");
 }
 
-CommandWidget::CommandWidget(QWidget *parent)
+CommandWidget::CommandWidget(QWidget* parent)
     : QWidget(parent)
+    , justExcuted("None")
     , ui(new Ui::CommandWidget)
-    ,justExcuted("None")
 {
     ui->setupUi(this);
     proc = new QProcess;
     proc->start("cmd");
-    connect(proc,&QProcess::readyReadStandardOutput,this,&CommandWidget::readyReadStandardOutputSlot);
-    connect(proc,&QProcess::readyReadStandardError,this,&CommandWidget::readyReadStandardErrorSlot);
+    connect(proc, &QProcess::readyReadStandardOutput, this,
+        &CommandWidget::readyReadStandardOutputSlot);
+    connect(proc, &QProcess::readyReadStandardError, this,
+        &CommandWidget::readyReadStandardErrorSlot);
+
+    //    setLayout(new QHBoxLayout);
 }
 
-int mmax(int a,int b)
-{
-    return a>b?a:b;
-}
+int mmax(int a, int b) { return a > b ? a : b; }
 
 void CommandWidget::readyReadStandardOutputSlot()
 {
     QByteArray ba = proc->readAll();
-    QTextCodec * textCodec = QTextCodec::codecForName("System");
-    QString output = textCodec->toUnicode(ba);
-    output.replace('\r',"");
+    QTextCodec* textCodec = QTextCodec::codecForName("System");
+    QString output = textCodec->toUnicode(ba).replace('\r', "");
 
-    int first_line = output.indexOf('\n');
+    auto AddCommandLine = [&](const QString& line) {
+        pushRichText(SKYBLUE_TEXT(line) + PURPLE_TEXT("        [" + QDateTime::currentDateTime().toString("yyyy.MM.dd hh:mm:ss.z") + "] "));
+    };
 
-    QString line = output.sliced(0,mmax(first_line,0));
-
-    if(line.startsWith(justExcuted))
-    {
-        pushRichText(SKYBLUE_TEXT(line));
-        pushText(output.sliced(first_line));
-
-    }
-    else {
+    if (output.startsWith(justExcuted)) {
+        int index = output.indexOf('\n');
+        if (index == -1)
+            AddCommandLine(output);
+        else {
+            AddCommandLine(output.sliced(0, index));
+            pushText(output.sliced(index));
+        }
+    } else
         pushText(output);
-    }
 
     ui->textEdit->moveCursor(QTextCursor::End);
 }
@@ -78,29 +83,28 @@ void CommandWidget::readyReadStandardErrorSlot()
     assert(textCodec != nullptr);
 
     QString output = textCodec->toUnicode(ba);
-    if(output.indexOf("warn",0,Qt::CaseSensitivity::CaseInsensitive)!=-1
-    || output.indexOf("error",0,Qt::CaseSensitivity::CaseInsensitive)==-1)
-    {
+    if (output.indexOf("warn", 0, Qt::CaseSensitivity::CaseInsensitive) != -1 || output.indexOf("error", 0, Qt::CaseSensitivity::CaseInsensitive) == -1) {
         pushRichText(YELLOW_TEXT(output));
-    }
-    else pushRichText(RED_TEXT(output));
+    } else
+        pushRichText(RED_TEXT(output));
 }
 
-QTextEdit*& CommandWidget::getTextEdit()
-{
-    return ui->textEdit;
-}
+QTextEdit*& CommandWidget::getTextEdit() { return ui->textEdit; }
 
 void CommandWidget::exec(const QString& text)
 {
-    if(!check_valid(text))return;
-    justExcuted=text.trimmed();
-    if(text.endsWith('\n'))
-        proc->write(text.toLocal8Bit());
-    else proc->write(text.toLocal8Bit()+'\n');
+    justExcuted = text.trimmed();
+    if (proc->state() != QProcess::ProcessState::Running) {
+        pushRichText(RED_TEXT("\n\n ***************** Process ended, unable to exec command, please click Restart button. ***************** \n\n"));
+        ui->textEdit->moveCursor(QTextCursor::End);
+        return;
+    }
+    if (!check_valid(justExcuted))
+        return;
+    if (justExcuted.endsWith('\n'))
+        proc->write(justExcuted.toLocal8Bit());
+    else
+        proc->write(justExcuted.toLocal8Bit() + '\n');
 }
 
-CommandWidget::~CommandWidget()
-{
-    delete ui;
-}
+CommandWidget::~CommandWidget() { delete ui; }
